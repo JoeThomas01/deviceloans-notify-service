@@ -36,6 +36,15 @@ function asString(x: unknown): string {
   return typeof x === 'string' ? x : String(x ?? '');
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export async function productUpdatedHttp(
   request: HttpRequest,
   context: InvocationContext
@@ -48,7 +57,6 @@ export async function productUpdatedHttp(
   });
 
   try {
-    // ✅ Required env vars (already set in your Function App)
     const acsConn = mustGetEnv('ACS_CONNECTION_STRING');
     const emailFrom = mustGetEnv('EMAIL_FROM');
 
@@ -80,7 +88,6 @@ export async function productUpdatedHttp(
     };
 
     const errors: string[] = [];
-
     if (!payload.id.trim()) errors.push('id is required');
     if (!payload.name.trim()) errors.push('name is required');
     if (!isNonNegativeInt(payload.pricePence))
@@ -91,7 +98,7 @@ export async function productUpdatedHttp(
       errors.push('updatedAt must be an ISO 8601 string (Date.toISOString)');
 
     if (errors.length) {
-      context.warn('[Notify] productUpdatedHttp validation failed', {
+      context.warn('[Notify] validation failed', {
         invocationId: context.invocationId,
         errors,
       });
@@ -101,12 +108,11 @@ export async function productUpdatedHttp(
       };
     }
 
-    // Send email via ACS Email
     const client = new EmailClient(acsConn);
 
     const subject = `Update: ${payload.name}`;
     const text = [
-      `Update received:`,
+      `Device update received`,
       ``,
       `ID: ${payload.id}`,
       `Name: ${payload.name}`,
@@ -118,39 +124,65 @@ export async function productUpdatedHttp(
 
     const html = `
       <h2>Device update received</h2>
-      <p><strong>ID:</strong> ${payload.id}</p>
-      <p><strong>Name:</strong> ${payload.name}</p>
-      <p><strong>Description:</strong> ${payload.description ?? '-'}</p>
-      <p><strong>Updated At:</strong> ${payload.updatedAt}</p>
+      <p><strong>ID:</strong> ${escapeHtml(payload.id)}</p>
+      <p><strong>Name:</strong> ${escapeHtml(payload.name)}</p>
+      <p><strong>Description:</strong> ${escapeHtml(
+        payload.description ?? '-'
+      )}</p>
+      <p><strong>Updated At:</strong> ${escapeHtml(payload.updatedAt)}</p>
       <hr/>
       <p style="color:#666">DeviceLoans Notify Service</p>
     `;
 
-    context.log('[Notify] sending email', {
+    context.log('[Notify] beginSend', {
       invocationId: context.invocationId,
       to: payload.recipientEmail,
       from: emailFrom,
     });
 
+    // IMPORTANT: JS SDK uses `sender` (not senderAddress)
     const message = {
-      senderAddress: emailFrom,
+      sender: emailFrom,
       recipients: { to: [{ address: payload.recipientEmail }] },
       content: { subject, plainText: text, html },
     };
 
-    // The SDK uses a poller
-    const poller = await client.beginSend(message);
-    const result = await poller.pollUntilDone();
+    const poller = await client.beginSend(message as any);
+    const result: any = await poller.pollUntilDone();
 
-    context.log('[Notify] email send result', {
+    const status = String(result?.status ?? '').toLowerCase();
+    const operationId = result?.id ?? result?.operationId ?? null;
+    const error = result?.error ?? null;
+
+    context.log('[Notify] send result', {
       invocationId: context.invocationId,
       durationMs: Date.now() - start,
-      messageId: (result as any)?.id ?? null,
-      status: (result as any)?.status ?? null,
+      status: result?.status ?? null,
+      operationId,
+      error,
     });
 
-    // Keep returning 202 to match “accepted” behaviour
-    return { status: 202, jsonBody: { message: 'accepted' } };
+    // ✅ If ACS says Failed, return 500 so we can SEE it in curl
+    if (status && status !== 'succeeded') {
+      return {
+        status: 500,
+        jsonBody: {
+          error: 'EmailSendFailed',
+          status: result?.status ?? null,
+          operationId,
+          details: error ?? null,
+        },
+      };
+    }
+
+    return {
+      status: 202,
+      jsonBody: {
+        message: 'accepted',
+        status: result?.status ?? null,
+        operationId,
+      },
+    };
   } catch (err: any) {
     context.error('[Notify] productUpdatedHttp error', {
       invocationId: context.invocationId,
