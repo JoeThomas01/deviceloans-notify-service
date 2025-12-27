@@ -1,0 +1,1 @@
+2025-12-27T16:17:19  Startup Request, url: /logstream/application, method: GET, type: request, pid: 4080,2,7, ScmType: None

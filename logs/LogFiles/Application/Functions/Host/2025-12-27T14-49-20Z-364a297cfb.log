@@ -1,0 +1,18 @@
+2025-12-27T14:49:19.956 [Information] Host lock lease acquired by instance ID '364a297cfbb30d40249f78e5f610e21c'.
+2025-12-27T14:49:44.962 [Information] HttpOptions
+{
+  "DynamicThrottlesEnabled": true,
+  "EnableChunkedRequestBinding": false,
+  "MaxConcurrentRequests": 100,
+  "MaxOutstandingRequests": 200,
+  "RoutePrefix": ""
+}
+2025-12-27T14:49:44.963 [Information] ConcurrencyOptions
+{
+  "DynamicConcurrencyEnabled": false,
+  "MaximumFunctionConcurrency": 500,
+  "CPUThreshold": 0.8,
+  "SnapshotPersistenceEnabled": true
+}
+2025-12-27T14:56:30.416 [Information] Stopping JobHost
+2025-12-27T14:56:30.419 [Information] Job host stopped
